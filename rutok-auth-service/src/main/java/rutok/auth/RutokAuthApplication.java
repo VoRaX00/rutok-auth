@@ -1,4 +1,4 @@
-package ru.rutok.auth;
+package rutok.auth;
 
 import org.springframework.boot.*;
 import org.springframework.boot.autoconfigure.*;

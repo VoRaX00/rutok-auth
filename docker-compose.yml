@@ -3,8 +3,8 @@ services:
     image: postgres:latest
     container_name: postgres-rutok
     environment:
-      - POSTGRES_USER=rutok
-      - POSTGRES_PASSWORD=rutok
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin
       - POSTGRES_DB=rutok
     ports:
-      - 6666:5432
+      - 5432:5432

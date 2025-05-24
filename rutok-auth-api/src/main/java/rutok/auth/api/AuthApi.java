@@ -1,4 +1,4 @@
-package ru.rutok.auth.api;
+package rutok.auth.api;
 
 import io.swagger.v3.oas.annotations.tags.*;
 
