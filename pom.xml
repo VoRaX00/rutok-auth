@@ -26,6 +26,7 @@
     <modules>
         <module>rutok-auth-api</module>
         <module>rutok-auth-service</module>
+        <module>rutok-auth-common</module>
     </modules>
 
     <build>
