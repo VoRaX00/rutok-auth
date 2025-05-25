@@ -1,1 +1,1 @@
-create schema if not exists acc_auth;
+create schema if not exists rutok_auth;
