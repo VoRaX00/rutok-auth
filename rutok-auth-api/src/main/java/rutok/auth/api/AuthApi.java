@@ -9,12 +9,16 @@ import rutok.auth.dto.*;
 @Tag(name = "Auth", description = "Сервис авторизации/аутентификации")
 public interface AuthApi {
 
-    @PostMapping("/login")
+    @PostMapping("/api/login")
     @Operation(summary = "Аутентификация пользователя")
     ResponseEntity<AuthDto> login(LoginRequest request);
 
-    @PostMapping("/refresh")
+    @PostMapping("/api/refresh")
     @Operation(summary = "Обновление пары JWT токенов")
     ResponseEntity<AuthDto> refresh(TokenRequest request);
+
+    @PostMapping("/api/logout")
+    @Operation(summary = "Удаление активных сессий")
+    void logout(TokenRequest request);
 
 }

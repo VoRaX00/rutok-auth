@@ -32,4 +32,10 @@ public class AuthController implements AuthApi {
         return ResponseEntity.ok(dto);
     }
 
+    @Override
+    public void logout(TokenRequest request) {
+        var token = request.getToken();
+        authService.logout(token);
+    }
+
 }
