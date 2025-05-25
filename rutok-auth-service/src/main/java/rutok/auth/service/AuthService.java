@@ -21,8 +21,6 @@ public class AuthService {
 
     private final RefreshTokenRepository refreshTokenRepository;
 
-    private final RoleRepository roleRepository;
-
     private final CredentialRepository credentialRepository;
 
     @Getter
@@ -72,6 +70,42 @@ public class AuthService {
 
         saveRefreshToken(token);
         return new AuthModel(access, refresh);
+    }
+
+    public AuthModel refresh(String refreshToken) {
+        var decoded = getJwtVerifier().verify(refreshToken);
+
+        var jti = UUID.fromString(decoded.getId());
+        var old = findRefreshTokenByJti(jti);
+        if (old == null) {
+            throw new JwtTokenException();
+        }
+
+        var user = userRepository.findUserById(old.getUserId())
+            .orElseThrow(() -> new NotFoundException("Пользователь с таким id не найден"));
+        var principal = buildPrincipal(user);
+
+        var accessJti = UUID.randomUUID();
+        var refreshJti = UUID.randomUUID();
+        var access = getJwtProvider().generateAccess(accessJti, principal);
+        var refresh = getJwtProvider().generateRefresh(refreshJti, principal);
+
+        var token = RefreshToken.builder()
+            .userId(user.getId())
+            .token(refresh)
+            .accessJti(accessJti)
+            .refreshJti(refreshJti)
+            .issuedAt(ZonedDateTime.now())
+            .expiredAt(ZonedDateTime.now().plusDays(7))
+            .build();
+
+        refreshTokenRepository.deleteByRefreshJti(jti);
+        refreshTokenRepository.save(token);
+        return new AuthModel(access, refresh);
+    }
+
+    public RefreshToken findRefreshTokenByJti(UUID refreshJti) {
+        return refreshTokenRepository.findByRefreshJti(refreshJti);
     }
 
     private String findSaltByUserId(Long userId) {
