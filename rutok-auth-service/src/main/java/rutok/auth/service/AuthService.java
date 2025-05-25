@@ -3,6 +3,7 @@ package rutok.auth.service;
 import java.time.*;
 import java.util.*;
 
+import jakarta.transaction.*;
 import lombok.*;
 import org.springframework.security.crypto.bcrypt.*;
 import org.springframework.stereotype.*;
@@ -17,9 +18,13 @@ import rutok.auth.repository.*;
 @RequiredArgsConstructor
 public class AuthService {
 
+    private static final String ROLE_USER_CODE = "ROLE_USER";
+
     private final UserRepository userRepository;
 
     private final RefreshTokenRepository refreshTokenRepository;
+
+    private final RoleRepository roleRepository;
 
     private final CredentialRepository credentialRepository;
 
@@ -72,6 +77,7 @@ public class AuthService {
         return new AuthModel(access, refresh);
     }
 
+    @Transactional
     public AuthModel refresh(String refreshToken) {
         var decoded = getJwtVerifier().verify(refreshToken);
 
@@ -111,7 +117,29 @@ public class AuthService {
         refreshTokenRepository.deleteByUserId(userId);
     }
 
-    public RefreshToken findRefreshTokenByJti(UUID refreshJti) {
+    public void register(User user) {
+        if (userRepository.findByEmail(user.getEmail()).isPresent()) {
+            throw new ConflictException("Пользователь с таким email существует");
+        }
+
+        var userRole = roleRepository.findByCode(ROLE_USER_CODE)
+            .orElseThrow(() -> new InternalServerException("Роль пользователя не найдена"));
+        user.setRoles(Set.of(userRole));
+
+        var salt = jwtProvider.generateSalt();
+        var hashedPassword = jwtProvider.hashPassword(user.getPassword(), salt);
+
+        userRepository.save(user);
+
+        credentialRepository.save(Credential.builder()
+            .id(user.getId())
+            .user(user)
+            .salt(salt)
+            .hash(hashedPassword)
+            .build());
+    }
+
+    private RefreshToken findRefreshTokenByJti(UUID refreshJti) {
         return refreshTokenRepository.findByRefreshJti(refreshJti);
     }
 

@@ -19,10 +19,10 @@ public class SecurityConfig {
     private String[] allowedUrls = new String[]{
         "/swagger-ui/**",
         "/v3/**",
-        "/login",
-        "/logout",
-        "/refresh",
-        "/register"
+        "/api/login",
+        "/api/logout",
+        "/api/refresh",
+        "/api/registration"
     };
 
     @Bean
