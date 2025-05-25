@@ -104,6 +104,13 @@ public class AuthService {
         return new AuthModel(access, refresh);
     }
 
+    public void logout(String refreshToken) {
+        var decoded = getJwtVerifier().verify(refreshToken);
+        var userId = decoded.getClaim("user_id").asLong();
+
+        refreshTokenRepository.deleteByUserId(userId);
+    }
+
     public RefreshToken findRefreshTokenByJti(UUID refreshJti) {
         return refreshTokenRepository.findByRefreshJti(refreshJti);
     }
