@@ -17,6 +17,8 @@ public class AuthController implements AuthApi {
 
     private final AuthMapper authMapper;
 
+    private final UserMapper userMapper;
+
     @Override
     public ResponseEntity<AuthDto> login(LoginRequest loginRequest) {
         var loginModel = authMapper.toModel(loginRequest);
@@ -36,6 +38,12 @@ public class AuthController implements AuthApi {
     public void logout(TokenRequest request) {
         var token = request.getToken();
         authService.logout(token);
+    }
+
+    @Override
+    public void registration(RegisterDto registerDto) {
+        var user = userMapper.toEntity(registerDto);
+        authService.register(user);
     }
 
 }

@@ -21,4 +21,8 @@ public interface AuthApi {
     @Operation(summary = "Удаление активных сессий")
     void logout(TokenRequest request);
 
+    @PostMapping("/api/registration")
+    @Operation(summary = "Регистрация пользователя")
+    void registration(RegisterDto registerDto);
+
 }
