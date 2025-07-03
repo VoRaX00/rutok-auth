@@ -1,6 +1,7 @@
 package rutok.auth.config;
 
 import com.fasterxml.jackson.databind.*;
+import com.fasterxml.jackson.datatype.jsr310.*;
 import org.springframework.boot.autoconfigure.condition.*;
 import org.springframework.context.annotation.*;
 import org.springframework.core.annotation.*;
@@ -12,9 +13,11 @@ import static org.springframework.core.Ordered.*;
 public class AuthConfig {
 
     @Bean
-    @ConditionalOnMissingBean
     public ObjectMapper objectMapper() {
-        return new ObjectMapper();
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(new JavaTimeModule());
+        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        return mapper;
     }
 
     @Bean
@@ -50,9 +53,9 @@ public class AuthConfig {
     @Bean
     @ConditionalOnMissingBean
     public JwtAuthFilter jwtAuthFilter(
-            JwtAuthHolder holder,
-            JwtVerifier verifier,
-            JwtAuthEntryPoint entryPoint
+        JwtAuthHolder holder,
+        JwtVerifier verifier,
+        JwtAuthEntryPoint entryPoint
     ) {
         return new JwtAuthFilter(holder, verifier, entryPoint);
     }

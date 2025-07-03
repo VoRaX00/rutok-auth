@@ -3,16 +3,17 @@ package rutok.auth.mapper;
 import org.mapstruct.*;
 import rutok.auth.dto.*;
 import rutok.auth.entity.*;
+import rutok.auth.model.*;
 
 @Mapper(componentModel = MappingConstants.ComponentModel.SPRING)
 public interface UserMapper {
 
-    @Mapping(target = "gender", source = "gender", qualifiedByName = "mappingGender")
-    User toEntity(RegisterDto dto);
+    UserModel toModel(RegisterDto registerDto);
 
-    @Named("mappingGender")
-    default Gender mappingGender(String gender) {
-        return Gender.valueOf(gender);
-    }
+    UserModel toModel(UserDto userDto);
+
+    UserModel toModel(CreateUserDto createUserDto);
+
+    CreateUserDto toDto(RegisterDto registerDto);
 
 }

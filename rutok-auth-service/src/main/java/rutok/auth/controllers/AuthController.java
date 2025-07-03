@@ -3,7 +3,6 @@ package rutok.auth.controllers;
 import lombok.*;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
-
 import rutok.auth.api.*;
 import rutok.auth.dto.*;
 import rutok.auth.mapper.*;
@@ -21,8 +20,7 @@ public class AuthController implements AuthApi {
 
     @Override
     public ResponseEntity<AuthDto> login(LoginRequest loginRequest) {
-        var loginModel = authMapper.toModel(loginRequest);
-        var model = authService.login(loginModel);
+        var model = authService.login(loginRequest);
         var dto = authMapper.toDto(model);
         return ResponseEntity.ok(dto);
     }
@@ -41,9 +39,16 @@ public class AuthController implements AuthApi {
     }
 
     @Override
-    public void registration(RegisterDto registerDto) {
-        var user = userMapper.toEntity(registerDto);
-        authService.register(user);
+    public ResponseEntity<AuthDto> registration(RegisterDto registerDto) {
+        return new ResponseEntity<>(authService.register(registerDto), HttpStatus.CREATED);
+    }
+
+    @Override
+    public ResponseEntity<HashedPasswordDto> hash(PasswordDto passwordDto) {
+        var hashedPassword = authService.hashPassword(
+            passwordDto.getEmail(),
+            passwordDto.getPassword());
+        return ResponseEntity.ok(new HashedPasswordDto(hashedPassword));
     }
 
 }

@@ -13,12 +13,10 @@ import static lombok.AccessLevel.*;
 public class Credential {
 
     @Id
-    @Column(name = "id")
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id")
-    private User user;
+    private String userEmail;
 
     @Column
     private String salt;

@@ -4,6 +4,7 @@ import java.util.*;
 
 import org.springframework.security.core.*;
 import org.springframework.security.core.context.*;
+import rutok.auth.exceptions.*;
 
 public class JwtAuthHolder {
 
@@ -13,6 +14,15 @@ public class JwtAuthHolder {
             .map(SecurityContext::getAuthentication)
             .orElse(null);
         return auth;
+    }
+
+    public Long getUserId() {
+        var auth = get();
+        return Optional.ofNullable(auth)
+            .filter(JwtAuth.class::isInstance)
+            .map(JwtAuth.class::cast)
+            .map(JwtAuth::getUserId)
+            .orElseThrow(() -> new UnauthorizedException("Ошибка при получении id пользователя"));
     }
 
     public void set(Authentication auth) {

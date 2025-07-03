@@ -1,13 +1,16 @@
 package rutok.auth.exception;
 
-public class ConflictException extends RuntimeException {
+import org.springframework.http.*;
+import rutok.auth.exceptions.*;
+
+public class ConflictException extends BaseException {
 
     public ConflictException(String message) {
-        super(message);
+        super(message, HttpStatus.CONFLICT);
     }
 
     public ConflictException(String message, Throwable cause) {
-        super(message, cause);
+        super(message, cause, HttpStatus.CONFLICT);
     }
 
 }

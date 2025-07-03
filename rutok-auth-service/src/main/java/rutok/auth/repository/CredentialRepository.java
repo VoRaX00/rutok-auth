@@ -9,8 +9,8 @@ import rutok.auth.entity.*;
 @Repository
 public interface CredentialRepository extends JpaRepository<Credential, Long> {
 
-    Optional<Credential> findByUserId(Long userId);
+    Optional<Credential> findByUserEmail(String userEmail);
 
-    Optional<Credential> findByUserIdAndHash(Long userId, String hash);
+    Optional<Credential> findByUserEmailAndHash(String userEmail, String hash);
 
 }

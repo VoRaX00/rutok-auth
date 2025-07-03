@@ -3,14 +3,19 @@ package rutok.auth.service;
 import java.time.*;
 import java.util.*;
 
-import jakarta.transaction.*;
+import feign.*;
 import lombok.*;
+import org.springframework.http.*;
 import org.springframework.security.crypto.bcrypt.*;
 import org.springframework.stereotype.*;
+import org.springframework.transaction.annotation.*;
 import rutok.auth.*;
+import rutok.auth.client.*;
+import rutok.auth.dto.*;
 import rutok.auth.entity.*;
 import rutok.auth.exception.*;
 import rutok.auth.exceptions.*;
+import rutok.auth.mapper.*;
 import rutok.auth.model.*;
 import rutok.auth.repository.*;
 
@@ -18,15 +23,15 @@ import rutok.auth.repository.*;
 @RequiredArgsConstructor
 public class AuthService {
 
-    private static final String ROLE_USER_CODE = "ROLE_USER";
-
-    private final UserRepository userRepository;
+    private static final String ROLE_USER_CODE = "USER";
 
     private final RefreshTokenRepository refreshTokenRepository;
 
-    private final RoleRepository roleRepository;
+    private final UserClient userClient;
 
     private final CredentialRepository credentialRepository;
+
+    private final UserMapper userMapper;
 
     @Getter
     private final JwtProperties jwtProps;
@@ -37,24 +42,23 @@ public class AuthService {
     @Getter
     private final JwtVerifier jwtVerifier;
 
-    public AuthModel login(LoginModel loginModel) {
-        var user = findUserByEmail(loginModel.getEmail());
-        if (user == null) {
-            throw new AuthenticationException();
-        }
-
-        var salt = findSaltByUserId(user.getId());
+    public AuthModel login(LoginRequest loginRequests) {
+        var salt = findSaltByUserEmail(loginRequests.getEmail());
         if (salt == null || salt.isBlank()) {
             throw new AuthenticationException();
         }
 
-        var hash = BCrypt.hashpw(loginModel.getPassword(), salt);
-        var id = findCredentialId(user.getId(), hash);
+        var hash = BCrypt.hashpw(loginRequests.getPassword(), salt);
+        loginRequests.setPassword(hash);
+        var user = getUser(loginRequests);
+
+        var id = findCredentialId(user.getEmail(), hash);
         if (id == null) {
             throw new AuthenticationException();
         }
 
-        var principal = buildPrincipal(user);
+        var model = userMapper.toModel(user);
+        var principal = buildPrincipal(model);
 
         var accessJti = UUID.randomUUID();
         var refreshJti = UUID.randomUUID();
@@ -78,6 +82,33 @@ public class AuthService {
     }
 
     @Transactional
+    public AuthDto issueTokens(UserModel user) {
+        var principal = buildPrincipal(user);
+
+        var accessJti = UUID.randomUUID();
+        var refreshJti = UUID.randomUUID();
+
+        var access = jwtProvider.generateAccess(accessJti, principal);
+        var refresh = jwtProvider.generateRefresh(refreshJti, principal);
+
+        var now = ZonedDateTime.now();
+        var expireAt = now.plusSeconds(jwtProps.getRefreshTokenExpiredOnSeconds());
+
+        var token = RefreshToken.builder()
+            .userId(user.getId())
+            .token(refresh)
+            .accessJti(accessJti)
+            .refreshJti(refreshJti)
+            .issuedAt(now)
+            .expiredAt(expireAt)
+            .build();
+
+        refreshTokenRepository.save(token);
+
+        return new AuthDto(access, refresh);
+    }
+
+    @Transactional
     public AuthModel refresh(String refreshToken) {
         var decoded = getJwtVerifier().verify(refreshToken);
 
@@ -87,9 +118,9 @@ public class AuthService {
             throw new JwtTokenException();
         }
 
-        var user = userRepository.findUserById(old.getUserId())
-            .orElseThrow(() -> new NotFoundException("Пользователь с таким id не найден"));
-        var principal = buildPrincipal(user);
+        var user = getUser(old.getUserId());
+        var model = userMapper.toModel(user);
+        var principal = buildPrincipal(model);
 
         var accessJti = UUID.randomUUID();
         var refreshJti = UUID.randomUUID();
@@ -110,6 +141,7 @@ public class AuthService {
         return new AuthModel(access, refresh);
     }
 
+    @Transactional
     public void logout(String refreshToken) {
         var decoded = getJwtVerifier().verify(refreshToken);
         var userId = decoded.getClaim("user_id").asLong();
@@ -117,57 +149,124 @@ public class AuthService {
         refreshTokenRepository.deleteByUserId(userId);
     }
 
-    public void register(User user) {
-        if (userRepository.findByEmail(user.getEmail()).isPresent()) {
-            throw new ConflictException("Пользователь с таким email существует");
-        }
-
-        var userRole = roleRepository.findByCode(ROLE_USER_CODE)
-            .orElseThrow(() -> new InternalServerException("Роль пользователя не найдена"));
-        user.setRoles(Set.of(userRole));
-
+    @Transactional
+    public AuthDto register(RegisterDto registerDto) {
         var salt = jwtProvider.generateSalt();
-        var hashedPassword = jwtProvider.hashPassword(user.getPassword(), salt);
-
-        userRepository.save(user);
+        var hashedPassword = jwtProvider.hashPassword(registerDto.getPassword(), salt);
+        registerDto.setPassword(hashedPassword);
+        var response = createUser(registerDto);
+        var model = userMapper.toModel(registerDto);
+        model.setId(response.getId());
+        model.setRoleCode(response.getRoleCode());
 
         credentialRepository.save(Credential.builder()
-            .id(user.getId())
-            .user(user)
+            .id(model.getId())
+            .userEmail(model.getEmail())
             .salt(salt)
             .hash(hashedPassword)
             .build());
+        return issueTokens(model);
+    }
+
+    public String hashPassword(String email, String password) {
+        var credential = credentialRepository.findByUserEmail(email)
+            .orElseThrow(() -> new BadRequestException("Неверная почта"));
+        var salt = credential.getSalt();
+        if (salt == null || salt.isBlank()) {
+            throw new AuthenticationException();
+        }
+
+        var passwordHash = jwtProvider.hashPassword(password, salt);
+        credential.setHash(passwordHash);
+        credentialRepository.save(credential);
+        return passwordHash;
+    }
+
+    private CreateUserResponse createUser(RegisterDto registerDto) {
+        try {
+            var id = userClient.createUser(registerDto);
+            return Optional.ofNullable(id)
+                .map(HttpEntity::getBody)
+                .orElseThrow(() -> new InternalServerException("Не удалось получить id пользователя"));
+        } catch (FeignException.BadRequest e) {
+            throw new BadRequestException(e.getMessage(), e);
+        } catch (FeignException.Conflict e) {
+            throw new ConflictException(e.getMessage(), e);
+        } catch (FeignException.InternalServerError e) {
+            throw new InternalServerException(
+                "Ошибка сервера пользователей. Не удалось создать пользователя", e
+            );
+        } catch (FeignException e) {
+            throw new InternalServerException(
+                "Ошибка сервера при обращении к микросервису пользователей", e
+            );
+        }
+    }
+
+    private UserDto getUser(LoginRequest loginRequest) {
+        try {
+            var result = userClient.check(loginRequest);
+            return Optional.ofNullable(result)
+                .map(HttpEntity::getBody)
+                .orElseThrow(() -> new InternalServerException(
+                    "Не удалось получить информацию о пользователе"));
+        } catch (FeignException.BadRequest e) {
+            throw new BadRequestException(e.getMessage(), e);
+        } catch (FeignException.NotFound e) {
+            throw new NotFoundException(e.getMessage(), e);
+        } catch (FeignException.InternalServerError e) {
+            throw new InternalServerException(
+                "Ошибка сервера пользователей. Не удалось пройти аутентификацию", e
+            );
+        } catch (FeignException e) {
+            throw new InternalServerException(
+                "Ошибка сервера. Не удалось обратиться к сервису пользователей", e
+            );
+        }
+    }
+
+    private UserDto getUser(Long userId) {
+        try {
+            var result = userClient.getUser(userId);
+            return Optional.ofNullable(result)
+                .map(HttpEntity::getBody)
+                .orElseThrow(() -> new InternalServerException(
+                    "Не удалось получить информацию о пользователе"));
+        } catch (FeignException.BadRequest e) {
+            throw new BadRequestException(e.getMessage(), e);
+        } catch (FeignException.NotFound e) {
+            throw new NotFoundException(e.getMessage(), e);
+        } catch (FeignException.InternalServerError e) {
+            throw new InternalServerException(
+                "Ошибка сервера пользователей. Не удалось пройти аутентификацию", e
+            );
+        } catch (FeignException e) {
+            throw new InternalServerException(
+                "Ошибка сервера. Не удалось обратиться к сервису пользователей", e
+            );
+        }
     }
 
     private RefreshToken findRefreshTokenByJti(UUID refreshJti) {
         return refreshTokenRepository.findByRefreshJti(refreshJti);
     }
 
-    private String findSaltByUserId(Long userId) {
-        var credentials = credentialRepository.findByUserId(userId)
-            .orElseThrow(() -> new NotFoundException("Пользователь с таким id не найден"));
+    private String findSaltByUserEmail(String userEmail) {
+        var credentials = credentialRepository.findByUserEmail(userEmail)
+            .orElseThrow(() -> new NotFoundException("Пользователь с таким email не найден"));
         return credentials.getSalt();
     }
 
-    private Credential findCredentialId(Long userId, String hash) {
-        return credentialRepository.findByUserIdAndHash(userId, hash)
-            .orElseThrow(() -> new NotFoundException("Пользователь с таким id и hash не найден"));
+    private Credential findCredentialId(String userEmail, String hash) {
+        return credentialRepository.findByUserEmailAndHash(userEmail, hash)
+            .orElseThrow(() -> new NotFoundException("Пользователь с таким email и hash не найден"));
     }
 
-    private User findUserByEmail(String email) {
-        return userRepository.findByEmail(email)
-            .orElseThrow(() -> new NotFoundException("Пользователь с таким email не найден"));
-    }
-
-    private Principal buildPrincipal(User user) {
-        var roles = user.getRoles().stream()
-            .map(Role::getCode)
-            .toList();
-
+    private Principal buildPrincipal(UserModel user) {
         return Principal.builder()
             .id(user.getId())
             .login(user.getEmail())
-            .roles(roles)
+            .roles(List.of(user.getRoleCode()))
             .build();
     }
 

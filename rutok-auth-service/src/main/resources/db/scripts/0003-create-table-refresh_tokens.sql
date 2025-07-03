@@ -7,6 +7,5 @@ create table refresh_tokens
     refresh_jti uuid                     NOT NULL,
     issued_at   timestamp with time zone NOT NULL,
     expired_at  timestamp with time zone NOT NULL,
-    CONSTRAINT pk_refresh_tokens_id PRIMARY KEY (id),
-    CONSTRAINT fk_refresh_tokens_user_id FOREIGN KEY (user_id) REFERENCES "users" (id) ON DELETE CASCADE
+    CONSTRAINT pk_refresh_tokens_id PRIMARY KEY (id)
 )

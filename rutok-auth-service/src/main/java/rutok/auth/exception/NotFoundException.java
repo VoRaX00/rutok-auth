@@ -1,13 +1,16 @@
 package rutok.auth.exception;
 
-public class NotFoundException extends RuntimeException {
+import org.springframework.http.*;
+import rutok.auth.exceptions.*;
+
+public class NotFoundException extends BaseException {
 
     public NotFoundException(String message) {
-        super(message);
+        super(message, HttpStatus.NOT_FOUND);
     }
 
-    public NotFoundException(String message, Throwable cause) {
-        super(message, cause);
+    public NotFoundException(String message, Throwable e) {
+        super(message, e, HttpStatus.NOT_FOUND);
     }
 
 }

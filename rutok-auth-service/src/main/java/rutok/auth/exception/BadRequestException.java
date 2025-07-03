@@ -1,13 +1,16 @@
 package rutok.auth.exception;
 
-public class BadRequestException extends RuntimeException {
+import org.springframework.http.*;
+import rutok.auth.exceptions.*;
+
+public class BadRequestException extends BaseException {
 
     public BadRequestException(String message) {
-        super(message);
+        super(message, HttpStatus.BAD_REQUEST);
     }
 
-    public BadRequestException(String message, Throwable cause) {
-        super(message, cause);
+    public BadRequestException(String message, Throwable e) {
+        super(message, e, HttpStatus.BAD_REQUEST);
     }
 
 }

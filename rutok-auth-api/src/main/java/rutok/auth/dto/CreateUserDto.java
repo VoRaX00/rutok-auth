@@ -5,12 +5,12 @@ import lombok.*;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class RegisterDto {
+public class CreateUserDto {
 
     private String username;
 
     private String email;
 
-    private String password;
+    private String hashedPassword;
 
 }
