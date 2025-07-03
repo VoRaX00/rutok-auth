@@ -1,16 +1,18 @@
-package rutok.auth.dto;
+package rutok.auth.model;
 
 import lombok.*;
 
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class RegisterDto {
+public class UserModel {
+
+    private Long id;
+
+    private String roleCode;
 
     private String username;
 
     private String email;
-
-    private String password;
 
 }

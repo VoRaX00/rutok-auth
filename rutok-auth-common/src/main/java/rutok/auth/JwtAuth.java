@@ -17,6 +17,8 @@ public class JwtAuth implements Authentication {
 
     private String login;
 
+    private String token;
+
     private List<GrantedAuthority> roles;
 
     private Map<String, Claim> claims;
@@ -28,7 +30,7 @@ public class JwtAuth implements Authentication {
 
     @Override
     public Object getPrincipal() {
-        return login;
+        return this;
     }
 
     @Override

@@ -1,101 +1,228 @@
 package rutok.auth.exception;
 
-import static java.util.stream.Collectors.*;
+import java.nio.file.*;
+import java.util.*;
 
+import com.fasterxml.jackson.databind.exc.*;
+import jakarta.validation.*;
 import lombok.extern.slf4j.*;
 import org.springframework.http.*;
-import org.springframework.validation.*;
+import org.springframework.http.converter.*;
 import org.springframework.web.bind.*;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.method.annotation.*;
+import org.springframework.web.multipart.*;
+import org.springframework.web.servlet.resource.*;
 import rutok.auth.dto.*;
 import rutok.auth.exceptions.*;
-
-import static org.springframework.http.HttpStatus.*;
 
 @Slf4j
 @RestControllerAdvice
 public class AuthExceptionHandler {
 
-    private static final String RETRY_TYPE = "RETRY";
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ResponseError> handle(AccessDeniedException error) {
+        log.error("Access denied: {}", error.getMessage(), error);
 
-    private static final String FINAL_TYPE = "FINAL";
-
-    private static final String ERROR_SERVER =
-        "Что-то пошло не так. Внутренняя ошибка сервера";
-
-    private static final String ERROR_VALIDATION_NULL =
-        "Ошибка запроса, отсутствуют следующие параметры запроса:";
-
-    private static final String ERROR_VALIDATION_PATTERN =
-        "Ошибка запроса, некорректные данные в следующих параметрах:";
-
-    @ExceptionHandler(RuntimeException.class)
-    public ResponseEntity<ResponseError> handleRuntimeException(RuntimeException ex) {
-        log.error("Unexpected exception", ex);
-        var dto = new ResponseError(FINAL_TYPE, ERROR_SERVER);
-
-        return ResponseEntity
-            .status(INTERNAL_SERVER_ERROR)
-            .body(dto);
+        return new ResponseEntity<>(
+            new ResponseError(
+                "RETRY",
+                error.getMessage() != null ? error.getMessage() : "Доступ запрещён"
+            ),
+            HttpStatus.FORBIDDEN
+        );
     }
 
-    @ExceptionHandler(AuthAppException.class)
-    public ResponseEntity<ResponseError> handleDefaultException(AuthAppException ex) {
-        log.error("Unexpected exception", ex);
-        var dto = new ResponseError(RETRY_TYPE, ex.getMessage());
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ResponseError> handle(HttpMessageNotReadableException error) {
+        log.error(error.getMessage(), error);
 
-        return ResponseEntity
-            .status(ex.getHttpStatus())
-            .body(dto);
+        var invalidFormatException = Optional.ofNullable(error.getCause())
+            .map(InvalidFormatException.class::cast)
+            .orElse(null);
+
+        if (invalidFormatException == null) {
+            return new ResponseEntity<>(
+                new ResponseError(
+                    "RETRY",
+                    error.getMessage()
+                ),
+                HttpStatus.BAD_REQUEST
+            );
+        }
+
+        var fieldName = "";
+        if (!invalidFormatException.getPath().isEmpty()) {
+            fieldName = invalidFormatException.getPath().getFirst().getFieldName();
+        }
+
+        String targetType = invalidFormatException.getTargetType() != null
+            ? invalidFormatException.getTargetType().getSimpleName()
+            : "неизвестный тип";
+
+        var message = String.format(
+            "Поле '%s' должно быть типа %s",
+            fieldName,
+            targetType
+        );
+
+        return new ResponseEntity<>(
+            new
+                ResponseError(
+                "RETRY",
+                message
+            ),
+            HttpStatus.BAD_REQUEST
+        );
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ResponseError> handleValidationException(
-        MethodArgumentNotValidException ex
-    ) {
-        log.error("Unexpected exception", ex);
-        var message = getValidationErrorMessage(ex.getBindingResult());
-        var dto = new ResponseError(RETRY_TYPE, message);
+    public ResponseEntity<ResponseError> handle(MethodArgumentNotValidException error) {
+        log.error(error.getMessage(), error);
 
-        return ResponseEntity
-            .status(BAD_REQUEST)
-            .body(dto);
+        var invalidFields = error.getBindingResult().getFieldErrors().stream()
+            .map(fieldError -> fieldError.getField() + ": " + fieldError.getDefaultMessage())
+            .toList();
+
+        var message = String.join("; ", invalidFields);
+        return new ResponseEntity<>(
+            new ResponseError(
+                "RETRY",
+                message
+            ),
+            HttpStatus.BAD_REQUEST
+        );
     }
 
-    private String getValidationErrorMessage(BindingResult bindingResult) {
-        var message = new StringBuilder();
-        var errors = bindingResult.getFieldErrors();
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ResponseError> handler(MethodArgumentTypeMismatchException exception) {
+        log.error(exception.getMessage(), exception);
 
-        var nullFields = errors.stream()
-            .filter(e -> "NotNull".equals(e.getCode()))
+        var name = exception.getName();
+        exception.getRequiredType();
+        var type = exception.getRequiredType().getSimpleName();
+
+        var message = String.format("Параметр %s должен быть типа %s", name, type);
+        return new ResponseEntity<>(
+            new ResponseError(
+                "RETRY",
+                message
+            ),
+            HttpStatus.BAD_REQUEST
+        );
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ResponseError> handler(MaxUploadSizeExceededException exception) {
+        log.error(exception.getMessage(), exception);
+        return new ResponseEntity<>(
+            new ResponseError(
+                "RETRY",
+                "Файл превышает максимальный размер"
+            ),
+            HttpStatus.PAYLOAD_TOO_LARGE
+        );
+    }
+
+    @ExceptionHandler(NotFoundException.class)
+    public ResponseEntity<ResponseError> handle(NotFoundException error) {
+        log.error(error.getMessage(), error);
+        return new ResponseEntity<>(
+            new ResponseError(
+                "RETRY",
+                error.getMessage()
+            ),
+            error.getHttpStatusCode()
+        );
+    }
+
+    @ExceptionHandler
+    public ResponseEntity<ResponseError> handle(ConstraintViolationException error) {
+        log.error(error.getMessage(), error);
+        var messages = error.getConstraintViolations().stream()
+            .map(ConstraintViolation::getMessage)
             .toList();
 
-        if (!nullFields.isEmpty()) {
-            var badFields = nullFields.stream()
-                .map(FieldError::getField)
-                .collect(joining(", "));
+        var message = String.join("; ", messages);
+        return new ResponseEntity<>(
+            new ResponseError(
+                "RETRY",
+                message
+            ),
+            HttpStatus.BAD_REQUEST
+        );
+    }
 
-            message.append(ERROR_VALIDATION_NULL);
-            message.append(badFields);
-            return message.toString();
-        }
+    @ExceptionHandler
+    public ResponseEntity<ResponseError> handle(NoResourceFoundException error) {
+        log.error(error.getMessage(), error);
+        return new ResponseEntity<>(
+            new ResponseError(
+                "RETRY",
+                error.getMessage()
+            ),
+            error.getStatusCode()
+        );
+    }
 
-        var invalidFields = errors.stream()
-            .filter(e -> "Pattern".equals(e.getCode()))
-            .toList();
+    @ExceptionHandler
+    public ResponseEntity<ResponseError> handle(Exception error) {
+        log.error(error.getMessage(), error);
+        return new ResponseEntity<>(
+            new ResponseError(
+                "FINAL",
+                "Ошибка сервера. Пожалуйста подождите или обратитесь в поддержку"
+            ),
+            HttpStatus.INTERNAL_SERVER_ERROR
+        );
+    }
 
-        if (!invalidFields.isEmpty()) {
-            var badFields = invalidFields.stream()
-                .map(f -> f.getField() + " - " + f.getRejectedValue())
-                .collect(joining(", "));
+    @ExceptionHandler(InternalServerException.class)
+    public ResponseEntity<ResponseError> handle(InternalServerException error) {
+        log.error(error.getMessage(), error);
+        return new ResponseEntity<>(
+            new ResponseError(
+                "FINAL",
+                error.getMessage()
+            ),
+            error.getHttpStatusCode()
+        );
+    }
 
-            message.append(ERROR_VALIDATION_PATTERN);
-            message.append(badFields);
-            return message.toString();
-        }
+    @ExceptionHandler(UnauthorizedException.class)
+    public ResponseEntity<ResponseError> handle(UnauthorizedException error) {
+        log.error(error.getMessage(), error);
+        return new ResponseEntity<>(
+            new ResponseError(
+                "RETRY",
+                error.getMessage()
+            ),
+            error.getHttpStatusCode()
+        );
+    }
 
-        log.warn("No errors for validation exception");
-        return "No errors";
+    @ExceptionHandler(BadRequestException.class)
+    public ResponseEntity<ResponseError> handle(BadRequestException error) {
+        log.error(error.getMessage(), error);
+        return new ResponseEntity<>(
+            new ResponseError(
+                "RETRY",
+                error.getMessage()
+            ),
+            error.getHttpStatusCode()
+        );
+    }
+
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<ResponseError> handle(ConflictException error) {
+        log.error(error.getMessage(), error);
+        return new ResponseEntity<>(
+            new ResponseError(
+                "RETRY",
+                error.getMessage()
+            ),
+            error.getHttpStatusCode()
+        );
     }
 
 }
